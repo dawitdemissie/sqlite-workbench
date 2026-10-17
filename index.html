@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Demissie SQLite Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<style>
+:root{
+  --bg:#EEF2F5; --panel:#FFFFFF; --ink:#1C2B36; --muted:#5D6F7C; --line:#D3DBE2;
+  --accent:#0F6E7A; --accent-ink:#FFFFFF; --accent-soft:#DCEFF1;
+  --null:#B9770E; --danger:#B3261E; --sel:#FFF3D6; --zebra:#F6F9FB;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121A20; --panel:#1A242C; --ink:#DCE5EB; --muted:#8FA2AF; --line:#2C3A45;
+    --accent:#3BB4C1; --accent-ink:#06262A; --accent-soft:#163238;
+    --null:#E0A846; --danger:#F2867E; --sel:#3A3220; --zebra:#1E2A33;
+    color-scheme:dark;
+  }
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);display:flex;flex-direction:column}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Toolbar */
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font-weight:700;font-size:15.5px;margin-right:12px;display:flex;align-items:center;gap:9px;letter-spacing:-.01em}
+.brand svg{flex:none;filter:drop-shadow(0 1px 1.5px rgb(0 0 0 / .18))}
+.brand .name{color:#000}
+.brand .sub{color:var(--ink);font-weight:500}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .brand .name{color:#fff}
+}
+.btn{border:1px solid var(--line);background:var(--panel);padding:5px 11px;border-radius:5px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:default;border-color:var(--line)}
+.file{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+.file b{color:var(--ink);font-weight:500}
+.dirty::after{content:" (unsaved changes)";color:var(--null)}
+
+/* Layout */
+.main{flex:1;display:grid;grid-template-columns:240px 1fr;min-height:0}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:10px 0}
+aside h3{font-size:12px;font-weight:600;color:var(--muted);margin:12px 14px 4px}
+aside ul{list-style:none;margin:0;padding:0}
+aside li button{all:unset;box-sizing:border-box;display:block;width:100%;padding:4px 14px;cursor:pointer;font-family:var(--mono);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+aside li button:hover{background:var(--accent-soft)}
+aside li button.on{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent)}
+aside .count{color:var(--muted);float:right;font-family:var(--sans);font-size:12px}
+aside .none{color:var(--muted);padding:2px 14px;font-size:13px}
+
+section.work{display:flex;flex-direction:column;min-width:0;min-height:0}
+.tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line)}
+.tab{border:1px solid transparent;border-bottom:none;background:none;padding:6px 14px;border-radius:6px 6px 0 0;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--panel);border-color:var(--line);color:var(--ink);font-weight:500;margin-bottom:-1px}
+.pane{display:none;flex:1;min-height:0;flex-direction:column;background:var(--panel)}
+.pane.on{display:flex}
+.bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.bar input[type=search],.bar select{border:1px solid var(--line);background:var(--bg);border-radius:5px;padding:5px 8px}
+.bar input[type=search]{min-width:200px;flex:1;max-width:340px}
+.spacer{flex:1}
+.muted{color:var(--muted);font-size:13px}
+
+/* Grid */
+.gridwrap{flex:1;overflow:auto;min-height:0}
+table.grid{border-collapse:separate;border-spacing:0;font-family:var(--mono);font-size:12.5px;min-width:100%}
+.grid th,.grid td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:4px 10px;text-align:left;white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis}
+.grid th{position:sticky;top:0;background:var(--bg);font-family:var(--sans);font-weight:600;font-size:13px;z-index:1;user-select:none}
+.grid th.sortable{cursor:pointer}
+.grid th .dir{color:var(--accent);margin-left:4px}
+.grid tbody tr:nth-child(even) td{background:var(--zebra)}
+.grid td.rn,.grid th.rn{position:sticky;left:0;background:var(--bg);color:var(--muted);text-align:right;font-family:var(--sans);font-size:12px;cursor:pointer;z-index:1}
+.grid th.rn{z-index:2}
+.grid tr.sel td{background:var(--sel)!important}
+.grid td.num{text-align:right}
+.grid .null{color:var(--null);font-style:italic}
+.grid .blob{color:var(--muted)}
+.grid.editable td:not(.rn){cursor:cell}
+.empty{padding:40px 24px;color:var(--muted);max-width:520px}
+.empty h2{color:var(--ink);font-size:18px;font-weight:600;margin:0 0 6px}
+
+.pager{display:flex;gap:6px;align-items:center;padding:6px 12px;border-top:1px solid var(--line);font-size:13px}
+
+/* SQL */
+.sqlsplit{display:grid;grid-template-rows:auto minmax(120px,38%) auto 1fr;flex:1;min-height:0}
+.sqltabs{display:flex;align-items:flex-end;gap:3px;padding:6px 8px 0;background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto}
+.sqltab{display:flex;align-items:center;gap:4px;padding:4px 4px 4px 12px;border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;color:var(--muted);font-size:13px;white-space:nowrap;cursor:pointer;user-select:none}
+.sqltab:hover{color:var(--ink)}
+.sqltab.on{background:var(--panel);color:var(--ink);font-weight:500;margin-bottom:-1px;padding-bottom:5px;box-shadow:inset 0 2px var(--accent)}
+.sqltab .x{border:none;background:none;width:20px;height:20px;border-radius:4px;padding:0;line-height:1;color:var(--muted);font-size:15px}
+.sqltab .x:hover{background:var(--accent-soft);color:var(--ink)}
+.addtab{border:none;background:none;font-size:18px;line-height:1;padding:4px 10px 6px;color:var(--muted);border-radius:6px 6px 0 0}
+.addtab:hover{color:var(--accent);background:var(--accent-soft)}
+textarea.sql{width:100%;height:100%;resize:none;border:none;border-bottom:1px solid var(--line);padding:12px;font:13.5px/1.55 var(--mono);background:var(--panel);color:var(--ink)}
+.msg{padding:6px 12px;font-size:13px;border-bottom:1px solid var(--line);color:var(--muted);font-family:var(--mono);white-space:pre-wrap}
+.msg.err{color:var(--danger)}
+.msg.ok{color:var(--accent)}
+
+/* Structure */
+.structure{overflow:auto;padding:4px 16px 24px}
+.obj{border-bottom:1px solid var(--line);padding:14px 0}
+.obj h4{margin:0 0 6px;font-family:var(--mono);font-size:14px;font-weight:500}
+.obj h4 small{font-family:var(--sans);color:var(--muted);font-weight:400;margin-left:8px}
+.obj pre{background:var(--bg);padding:10px 12px;border-radius:5px;overflow:auto;font:12.5px/1.5 var(--mono);margin:6px 0 0}
+.cols{border-collapse:collapse;font-size:13px}
+.cols td,.cols th{padding:3px 14px 3px 0;text-align:left}
+.cols th{color:var(--muted);font-weight:500}
+.cols td:first-child{font-family:var(--mono)}
+
+/* Dialog */
+dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;width:min(560px,92vw)}
+dialog::backdrop{background:rgb(0 0 0 / .35)}
+dialog header{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600}
+dialog .body{padding:12px 16px}
+dialog textarea,dialog input[type=text]{width:100%;border:1px solid var(--line);border-radius:5px;padding:8px;background:var(--bg);font:13px/1.5 var(--mono)}
+dialog textarea{min-height:160px;resize:vertical}
+dialog footer{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
+dialog label{display:flex;gap:6px;align-items:center;margin-top:10px;font-size:13px}
+
+/* Drop overlay & toast */
+.drop{position:fixed;inset:0;background:rgb(15 110 122 / .14);border:3px dashed var(--accent);display:none;place-items:center;font-size:20px;font-weight:600;color:var(--accent);z-index:50}
+.drop.on{display:grid}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
+.toast.on{opacity:1}
+.loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:80;color:var(--muted)}
+
+@media (max-width:760px){
+  .main{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  aside{max-height:28vh;border-right:none;border-bottom:1px solid var(--line)}
+  .file{max-width:100%;margin-left:0;flex-basis:100%}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="loading" id="loading">Loading SQLite engine…</div>
+
+<div class="toolbar">
+  <span class="brand">
+    <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
+      <defs>
+        <linearGradient id="lgTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5EE3EC"/><stop offset="1" stop-color="#0FA3B1"/></linearGradient>
+        <linearGradient id="lgMid" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2F6FEB"/><stop offset="1" stop-color="#9B3FD6"/></linearGradient>
+        <linearGradient id="lgBot" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#E23F8C"/><stop offset="1" stop-color="#F7931E"/></linearGradient>
+      </defs>
+      <path fill="url(#lgBot)" d="M4 13v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V13c0 1.66-3.58 3-8 3s-8-1.34-8-3z"/>
+      <path fill="url(#lgMid)" d="M4 5.5v5c0 1.66 3.58 3 8 3s8-1.34 8-3v-5c0 1.66-3.58 3-8 3s-8-1.34-8-3z"/>
+      <ellipse cx="12" cy="5" rx="8" ry="3" fill="url(#lgTop)"/>
+      <ellipse cx="9.2" cy="4.3" rx="2.6" ry=".8" fill="#fff" opacity=".55"/>
+    </svg>
+    <span><span class="name">Demissie</span> <span class="sub">SQLite Workbench</span></span>
+  </span>
+  <button class="btn" id="bNew">New database</button>
+  <button class="btn primary" id="bOpen">Open database</button>
+  <button class="btn" id="bSave" disabled>Save database</button>
+  <button class="btn" id="bImport" title="Import tables from a SQLite database, CSV/TSV file or SQL script">Import file</button>
+  <button class="btn" id="bSample">Load sample</button>
+  <span class="file" id="fileLabel">No database open</span>
+  <input type="file" id="fOpen" accept=".db,.sqlite,.sqlite3,.db3,.s3db,*/*" hidden>
+  <input type="file" id="fCsv" accept=".sqlite,.sqlite3,.db,.db3,.s3db,.sl3,.csv,.tsv,.tab,.txt,.sql,text/csv,application/x-sqlite3,application/vnd.sqlite3" hidden>
+</div>
+
+<div class="main">
+  <aside id="schema" aria-label="Database objects">
+    <div class="none" style="padding-top:6px">Open or create a database to see its tables.</div>
+  </aside>
+
+  <section class="work">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="structure" aria-selected="false">Database structure</button>
+      <button class="tab" role="tab" data-tab="browse" aria-selected="true">Browse data</button>
+      <button class="tab" role="tab" data-tab="sql" aria-selected="false">Execute SQL</button>
+    </div>
+
+    <div class="pane" id="p-structure">
+      <div class="structure" id="structure"></div>
+    </div>
+
+    <div class="pane on" id="p-browse">
+      <div class="bar">
+        <select id="tblSel" aria-label="Table"></select>
+        <input type="search" id="filter" placeholder="Filter rows in any column" aria-label="Filter rows">
+        <span class="spacer"></span>
+        <button class="btn" id="bAddRow" disabled>New row</button>
+        <button class="btn danger" id="bDelRow" disabled>Delete row</button>
+        <button class="btn" id="bExportCsv" disabled>Export CSV</button>
+      </div>
+      <div class="gridwrap" id="browseGrid"></div>
+      <div class="pager">
+        <button class="btn" id="pgFirst" aria-label="First page">«</button>
+        <button class="btn" id="pgPrev" aria-label="Previous page">‹</button>
+        <span id="pgInfo" class="muted"></span>
+        <button class="btn" id="pgNext" aria-label="Next page">›</button>
+        <button class="btn" id="pgLast" aria-label="Last page">»</button>
+        <span class="spacer"></span>
+        <span class="muted">Double-click a cell to edit it</span>
+      </div>
+    </div>
+
+    <div class="pane" id="p-sql">
+      <div class="sqlsplit">
+        <div class="sqltabs" id="sqlTabs" role="tablist" aria-label="SQL editor tabs"></div>
+        <textarea class="sql" id="sqlText" spellcheck="false" aria-label="SQL editor" placeholder="SELECT * FROM sqlite_master;"></textarea>
+        <div class="bar">
+          <button class="btn primary" id="bRun">Run all</button>
+          <button class="btn" id="bRunSel">Run selection</button>
+          <span class="muted">Ctrl + Enter runs · Alt + N new tab</span>
+          <span class="spacer"></span>
+          <button class="btn" id="bSqlOpen" title="Open a .sql file in a new tab">Open SQL</button>
+          <button class="btn" id="bSqlSave" title="Download this tab’s SQL as a .sql file">Save SQL</button>
+          <button class="btn" id="bSqlCsv" disabled title="Download this tab’s result as CSV">Export result</button>
+          <input type="file" id="fSql" accept=".sql,.txt,text/plain" hidden>
+        </div>
+        <div style="display:flex;flex-direction:column;min-height:0">
+          <div class="msg" id="sqlMsg">Results appear here.</div>
+          <div class="gridwrap" id="sqlGrid"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<dialog id="editDlg">
+  <form method="dialog">
+    <header id="editTitle">Edit cell</header>
+    <div class="body"><textarea id="editVal" spellcheck="false"></textarea></div>
+    <footer>
+      <button class="btn primary" value="save">Save</button>
+      <button class="btn" value="null">Set NULL</button>
+      <span class="spacer"></span>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="csvDlg">
+  <form method="dialog">
+    <header id="csvTitle">Import CSV</header>
+    <div class="body">
+      <label style="display:block;margin:0 0 4px">Table name</label>
+      <input type="text" id="csvName" required pattern="[^\x22]+">
+      <label><input type="checkbox" id="csvHeader" checked> First row contains column names</label>
+      <p class="muted" id="csvInfo" style="margin:10px 0 0"></p>
+    </div>
+    <footer>
+      <button class="btn primary" value="ok">Import</button>
+      <span class="spacer"></span>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="dbDlg">
+  <form method="dialog">
+    <header id="dbDlgTitle">Import from database</header>
+    <div class="body">
+      <p class="muted" style="margin:0 0 8px">Choose the tables to copy into the open database. A table whose name is already taken is imported under a new name, such as orders_2.</p>
+      <div style="display:flex;gap:12px;margin-bottom:6px;font-size:13px">
+        <button type="button" class="btn" id="dbAll">Select all</button>
+        <button type="button" class="btn" id="dbNone">Select none</button>
+      </div>
+      <div id="dbDlgList" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:5px;padding:4px 10px"></div>
+      <label><input type="checkbox" id="dbExtras" checked> Also copy indexes, views and triggers</label>
+    </div>
+    <footer>
+      <button class="btn primary" value="ok">Import tables</button>
+      <span class="spacer"></span>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+    </footer>
+  </form>
+</dialog>
+
+<div class="drop" id="drop">Drop a SQLite database, CSV or SQL file</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const qi = n => '"' + String(n).replace(/"/g, '""') + '"';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let SQL = null, db = null, fileName = "untitled.sqlite", dirty = false;
+const B = { table: null, type: "table", page: 0, size: 100, sort: null, dir: "ASC", filter: "", sel: null, editable: false, total: 0, cols: [], rids: [], rows: [] };
+const SQLTABS_KEY = "demissie-workbench.sqltabs.v1";
+let sqlTabs = [], activeSql = 0, nameSeq = 1;
+
+/* ---------- utilities ---------- */
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 2600);
+}
+function setDirty(v) { dirty = v; renderFileLabel(); }
+function renderFileLabel() {
+  const el = $("#fileLabel");
+  if (!db) { el.textContent = "No database open"; el.classList.remove("dirty"); return; }
+  el.innerHTML = "<b>" + esc(fileName) + "</b>";
+  el.classList.toggle("dirty", dirty);
+}
+function query(sql, params, d) {
+  const st = (d || db).prepare(sql);
+  try {
+    if (params) st.bind(params);
+    const cols = st.getColumnNames(), rows = [];
+    while (st.step()) rows.push(st.get());
+    return { cols, rows };
+  } finally { st.free(); }
+}
+function download(data, name, type) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement("a"); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function toCsv(cols, rows) {
+  const f = v => {
+    if (v === null || v === undefined) return "";
+    if (v instanceof Uint8Array) return "";
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return [cols.map(f).join(","), ...rows.map(r => r.map(f).join(","))].join("\r\n");
+}
+function parseCsv(text, delim = ",") {
+  const rows = []; let row = [], field = "", i = 0, q = false;
+  if (text.charCodeAt(0) === 0xFEFF) i = 1;
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+      else field += c;
+    } else if (c === '"') q = true;
+    else if (c === delim) { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length === 1 && r[0] === ""));
+}
+
+/* ---------- grid rendering ---------- */
+function cellHtml(v) {
+  if (v === null || v === undefined) return '<td><span class="null">NULL</span></td>';
+  if (v instanceof Uint8Array) return '<td><span class="blob">BLOB · ' + v.length + ' bytes</span></td>';
+  const s = String(v);
+  const cls = typeof v === "number" ? ' class="num"' : "";
+  return "<td" + cls + ' title="' + esc(s.length > 500 ? s.slice(0, 500) + "…" : s) + '">' + esc(s.length > 200 ? s.slice(0, 200) + "…" : s) + "</td>";
+}
+function renderGrid(el, cols, rows, o = {}) {
+  if (!cols.length) { el.innerHTML = ""; return; }
+  const start = o.offset || 0;
+  let h = '<table class="grid' + (o.editable ? " editable" : "") + '"><thead><tr><th class="rn">#</th>';
+  cols.forEach((c, i) => {
+    const d = o.sort === c ? '<span class="dir">' + (o.dir === "ASC" ? "▲" : "▼") + "</span>" : "";
+    h += '<th' + (o.sortable ? ' class="sortable" data-col="' + i + '" title="Sort by ' + esc(c) + '"' : "") + ">" + esc(c) + d + "</th>";
+  });
+  h += "</tr></thead><tbody>";
+  rows.forEach((r, ri) => {
+    h += '<tr data-r="' + ri + '"' + (o.sel === ri ? ' class="sel"' : "") + '><td class="rn">' + (start + ri + 1) + "</td>";
+    r.forEach(v => h += cellHtml(v));
+    h += "</tr>";
+  });
+  el.innerHTML = h + "</tbody></table>";
+}
+
+/* ---------- schema ---------- */
+function objects() {
+  return query("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").rows
+    .map(([type, name, tbl, sql]) => ({ type, name, tbl, sql }));
+}
+function refreshSchema(keepTable) {
+  const objs = objects();
+  const groups = { table: "Tables", view: "Views", index: "Indexes", trigger: "Triggers" };
+  let h = "";
+  for (const [t, label] of Object.entries(groups)) {
+    const list = objs.filter(o => o.type === t);
+    h += "<h3>" + label + "</h3>";
+    if (!list.length) { h += '<div class="none">None</div>'; continue; }
+    h += "<ul>";
+    list.forEach(o => {
+      let count = "";
+      if (t === "table") { try { count = query("SELECT COUNT(*) FROM " + qi(o.name)).rows[0][0]; } catch (e) {} }
+      const browsable = t === "table" || t === "view";
+      h += '<li><button data-obj="' + esc(o.name) + '" data-type="' + t + '"' + (browsable && o.name === B.table ? ' class="on"' : "") + ' title="' + esc(o.name) + '">' +
+        esc(o.name) + (count !== "" ? '<span class="count">' + count + "</span>" : "") + "</button></li>";
+    });
+    h += "</ul>";
+  }
+  $("#schema").innerHTML = h;
+
+  // table selector
+  const browsable = objs.filter(o => o.type === "table" || o.type === "view");
+  $("#tblSel").innerHTML = browsable.length
+    ? browsable.map(o => '<option value="' + esc(o.name) + '" data-type="' + o.type + '">' + esc(o.name) + (o.type === "view" ? " (view)" : "") + "</option>").join("")
+    : "<option value=''>No tables</option>";
+
+  if (!keepTable || !browsable.some(o => o.name === B.table)) {
+    B.table = browsable[0] ? browsable[0].name : null;
+    B.type = browsable[0] ? browsable[0].type : "table";
+    B.page = 0; B.sort = null; B.sel = null;
+  }
+  if (B.table) $("#tblSel").value = B.table;
+  renderStructure(objs);
+  loadBrowse();
+}
+function renderStructure(objs) {
+  const el = $("#structure");
+  if (!objs.length) {
+    el.innerHTML = '<div class="empty"><h2>This database is empty</h2>Create a table in the Execute SQL tab, or import a CSV file.</div>';
+    return;
+  }
+  el.innerHTML = objs.map(o => {
+    let cols = "";
+    if (o.type === "table" || o.type === "view") {
+      try {
+        const r = query("PRAGMA table_info(" + qi(o.name) + ")").rows;
+        cols = '<table class="cols"><tr><th>Column</th><th>Type</th><th>Not null</th><th>Default</th><th>Primary key</th></tr>' +
+          r.map(c => "<tr><td>" + esc(c[1]) + "</td><td>" + esc(c[2] || "—") + "</td><td>" + (c[3] ? "Yes" : "") + "</td><td>" +
+            (c[4] === null ? "" : esc(c[4])) + "</td><td>" + (c[5] ? "Yes" : "") + "</td></tr>").join("") + "</table>";
+      } catch (e) {}
+    }
+    const label = { table: "Table", view: "View", index: "Index on " + esc(o.tbl), trigger: "Trigger on " + esc(o.tbl) }[o.type];
+    return '<div class="obj"><h4>' + esc(o.name) + "<small>" + label + "</small></h4>" + cols + (o.sql ? "<pre>" + esc(o.sql) + "</pre>" : "") + "</div>";
+  }).join("");
+}
+
+/* ---------- browse ---------- */
+function whereClause(cols) {
+  if (!B.filter) return { sql: "", params: [] };
+  return { sql: " WHERE " + cols.map(c => "CAST(" + qi(c) + " AS TEXT) LIKE ?").join(" OR "), params: cols.map(() => "%" + B.filter + "%") };
+}
+function loadBrowse() {
+  const grid = $("#browseGrid");
+  if (!db) { grid.innerHTML = '<div class="empty"><h2>No database open</h2>Open a .db or .sqlite file from your computer, drag one onto this page, or start with the sample database. Files never leave your browser.</div>'; updatePager(); updateButtons(); return; }
+  if (!B.table) { grid.innerHTML = '<div class="empty"><h2>No tables yet</h2>Create one in the Execute SQL tab or import a CSV file.</div>'; B.cols = []; updatePager(); updateButtons(); return; }
+
+  const t = qi(B.table);
+  const colNames = query("PRAGMA table_info(" + t + ")").rows.map(r => r[1]);
+  const w = whereClause(colNames);
+  try { B.total = query("SELECT COUNT(*) FROM " + t + w.sql, w.params).rows[0][0]; }
+  catch (e) { grid.innerHTML = '<div class="empty"><h2>Can’t read this table</h2>' + esc(e.message) + "</div>"; return; }
+  const maxPage = Math.max(0, Math.ceil(B.total / B.size) - 1);
+  if (B.page > maxPage) B.page = maxPage;
+  const order = B.sort ? " ORDER BY " + qi(B.sort) + " " + B.dir : "";
+  const tail = w.sql + order + " LIMIT " + B.size + " OFFSET " + (B.page * B.size);
+
+  let res, withRid = B.type === "table";
+  if (withRid) {
+    try { res = query("SELECT rowid AS __wb_rid, * FROM " + t + tail, w.params); }
+    catch (e) { withRid = false; }
+  }
+  if (!withRid) res = query("SELECT * FROM " + t + tail, w.params);
+
+  B.editable = withRid;
+  B.cols = withRid ? res.cols.slice(1) : res.cols;
+  B.rids = withRid ? res.rows.map(r => r[0]) : [];
+  B.rows = withRid ? res.rows.map(r => r.slice(1)) : res.rows;
+  if (B.sel !== null && B.sel >= B.rows.length) B.sel = null;
+
+  renderGrid(grid, B.cols, B.rows, { sortable: true, sort: B.sort, dir: B.dir, editable: B.editable, sel: B.sel, offset: B.page * B.size });
+  if (!B.rows.length) grid.insertAdjacentHTML("beforeend", '<div class="empty">' + (B.filter ? "No rows match “" + esc(B.filter) + "”." : "This " + B.type + " has no rows yet." + (B.editable ? " Use New row to add one." : "")) + "</div>");
+  updatePager(); updateButtons();
+  document.querySelectorAll("#schema button[data-obj]").forEach(b => b.classList.toggle("on", b.dataset.obj === B.table && (b.dataset.type === "table" || b.dataset.type === "view")));
+}
+function updatePager() {
+  const pages = Math.max(1, Math.ceil(B.total / B.size));
+  const has = db && B.table;
+  $("#pgInfo").textContent = has ? (B.total ? (B.page * B.size + 1) + "–" + Math.min(B.total, (B.page + 1) * B.size) + " of " + B.total + " rows · page " + (B.page + 1) + " of " + pages : "0 rows") : "";
+  $("#pgFirst").disabled = $("#pgPrev").disabled = !has || B.page === 0;
+  $("#pgNext").disabled = $("#pgLast").disabled = !has || B.page >= pages - 1;
+}
+function updateButtons() {
+  $("#bSave").disabled = !db;
+  $("#bAddRow").disabled = !(db && B.table && B.editable);
+  $("#bDelRow").disabled = !(db && B.table && B.editable && B.sel !== null);
+  $("#bExportCsv").disabled = !(db && B.table);
+}
+
+/* ---------- editing ---------- */
+function editCell(ri, ci) {
+  const v = B.rows[ri][ci];
+  if (v instanceof Uint8Array) { toast("BLOB values can’t be edited here. Use Execute SQL instead."); return; }
+  $("#editTitle").textContent = "Edit " + B.cols[ci] + " (row " + (B.page * B.size + ri + 1) + ")";
+  const ta = $("#editVal"); ta.value = v === null ? "" : String(v);
+  ta.placeholder = v === null ? "Currently NULL" : "";
+  const dlg = $("#editDlg");
+  dlg.returnValue = "cancel";
+  dlg.onclose = () => {
+    const action = dlg.returnValue;
+    if (action !== "save" && action !== "null") return;
+    const nv = action === "null" ? null : ta.value;
+    try {
+      db.run("UPDATE " + qi(B.table) + " SET " + qi(B.cols[ci]) + " = ? WHERE rowid = ?", [nv, B.rids[ri]]);
+      setDirty(true); loadBrowse(); toast("Cell updated");
+    } catch (e) { toast("Couldn’t update: " + e.message); }
+  };
+  dlg.showModal(); ta.focus(); ta.select();
+}
+
+/* ---------- open / new / save ---------- */
+function setDb(newDb, name) {
+  if (db) db.close();
+  db = newDb; fileName = name;
+  sqlTabs.forEach(t => { t.result = null; t.msg = "Results appear here."; t.msgClass = "msg"; });
+  B.table = null; B.filter = ""; $("#filter").value = "";
+  if (sqlTabs.length) renderSqlTab();
+  setDirty(false); refreshSchema(false);
+}
+function confirmDiscard() { return !dirty || confirm("You have unsaved changes. Discard them?"); }
+async function openFile(file) {
+  if (/\.(csv|tsv|tab|txt|sql)$/i.test(file.name)) return importFile(file);
+  if (!confirmDiscard()) return;
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const d = new SQL.Database(buf);
+    d.exec("SELECT count(*) FROM sqlite_master"); // validates file
+    setDb(d, file.name); toast("Opened " + file.name);
+  } catch (e) { toast("That file isn’t a readable SQLite database (" + e.message + ")"); }
+}
+function saveDb() {
+  download(db.export(), fileName, "application/vnd.sqlite3");
+  setDirty(false); toast("Saved " + fileName + " to your downloads");
+}
+function sampleDb() {
+  const d = new SQL.Database();
+  d.run(`
+CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE, city TEXT, joined DATE DEFAULT CURRENT_DATE);
+CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, stock INTEGER DEFAULT 0);
+CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id), product_id INTEGER REFERENCES products(id), qty INTEGER NOT NULL, ordered_at TEXT);
+CREATE INDEX idx_orders_customer ON orders(customer_id);
+CREATE VIEW order_totals AS SELECT c.name AS customer, COUNT(o.id) AS orders, ROUND(SUM(o.qty * p.price), 2) AS total
+  FROM customers c LEFT JOIN orders o ON o.customer_id = c.id LEFT JOIN products p ON p.id = o.product_id GROUP BY c.id ORDER BY total DESC;
+INSERT INTO customers (name,email,city,joined) VALUES
+ ('Amara Okafor','amara@example.com','Lagos','2024-02-11'),('Lukas Brandt','lukas@example.com','Berlin','2024-03-02'),
+ ('Mei Tanaka','mei@example.com','Osaka','2024-05-19'),('Diego Ramos','diego@example.com',NULL,'2024-06-07'),
+ ('Priya Nair','priya@example.com','Kochi','2024-08-23'),('Noah Fischer',NULL,'Zurich','2025-01-14');
+INSERT INTO products (name,price,stock) VALUES ('Notebook',4.5,120),('Fountain pen',38,14),('Desk lamp',52.99,8),('Paper clips',1.2,900),('Backpack',64,22);
+`);
+  const st = d.prepare("INSERT INTO orders (customer_id,product_id,qty,ordered_at) VALUES (?,?,?,?)");
+  for (let i = 0; i < 240; i++) {
+    const day = new Date(Date.UTC(2025, 0, 1) + i * 86400000 * 1.5).toISOString().slice(0, 10);
+    st.run([1 + (i * 7) % 6, 1 + (i * 3) % 5, 1 + (i % 4), day]);
+  }
+  st.free();
+  return d;
+}
+
+/* ---------- Import (any supported file) ---------- */
+async function importFile(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const isSqlite = buf.length >= 16 && new TextDecoder().decode(buf.subarray(0, 15)) === "SQLite format 3";
+  if (isSqlite) {
+    if (!db) { // nothing open yet: just open it
+      try { setDb(new SQL.Database(buf), file.name); toast("Opened " + file.name); }
+      catch (e) { toast("That SQLite file couldn’t be read (" + e.message + ")"); }
+      return;
+    }
+    return importSqlite(buf, file.name);
+  }
+  if (!db) setDb(new SQL.Database(), "untitled.sqlite");
+  const text = new TextDecoder().decode(buf);
+  if (/\.sql$/i.test(file.name) || /^\s*(--|\/\*|BEGIN|PRAGMA|CREATE|INSERT)/i.test(text.slice(0, 400))) return importSqlScript(text, file.name);
+  if (/[\x00-\x08]/.test(text.slice(0, 2000))) { toast(file.name + " isn’t a SQLite database, CSV/TSV or SQL file"); return; }
+  return importCsv(file, text);
+}
+function importSqlScript(text, name) {
+  try {
+    db.exec(text);
+    toast("Ran " + name);
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch (_) {}
+    toast("Stopped with an error in " + name + ": " + e.message);
+  }
+  setDirty(true); refreshSchema(true); showTab("structure");
+}
+function importSqlite(buf, name) {
+  let src;
+  try { src = new SQL.Database(buf); src.exec("SELECT count(*) FROM sqlite_master"); }
+  catch (e) { toast("That SQLite file couldn’t be read (" + e.message + ")"); return; }
+  const objs = query("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name", null, src).rows
+    .map(([type, name, tbl, sql]) => ({ type, name, tbl, sql }));
+  const tables = objs.filter(o => o.type === "table");
+  if (!tables.length) { src.close(); toast(name + " has no tables to import"); return; }
+
+  $("#dbDlgTitle").textContent = "Import from " + name;
+  $("#dbDlgList").innerHTML = tables.map((t, i) => {
+    let n = ""; try { n = query("SELECT COUNT(*) FROM " + qi(t.name), null, src).rows[0][0] + " rows"; } catch (e) {}
+    return '<label style="margin:6px 0"><input type="checkbox" data-i="' + i + '" checked> <span style="font-family:var(--mono)">' + esc(t.name) + '</span> <span class="muted">' + n + "</span></label>";
+  }).join("");
+  $("#dbAll").onclick = () => document.querySelectorAll("#dbDlgList input").forEach(c => c.checked = true);
+  $("#dbNone").onclick = () => document.querySelectorAll("#dbDlgList input").forEach(c => c.checked = false);
+
+  const dlg = $("#dbDlg");
+  dlg.returnValue = "cancel";
+  dlg.onclose = () => {
+    if (dlg.returnValue !== "ok") { src.close(); return; }
+    const chosen = [...document.querySelectorAll("#dbDlgList input:checked")].map(c => tables[+c.dataset.i]);
+    if (!chosen.length) { src.close(); toast("No tables selected"); return; }
+    const taken = new Set(query("SELECT lower(name) FROM sqlite_master").rows.map(r => r[0]));
+    const renamed = {}; let rowsCopied = 0, extras = 0, skipped = 0;
+    try {
+      db.run("BEGIN");
+      for (const t of chosen) {
+        let target = t.name;
+        if (taken.has(target.toLowerCase())) { let n = 2; while (taken.has((t.name + "_" + n).toLowerCase())) n++; target = t.name + "_" + n; }
+        taken.add(target.toLowerCase());
+        const info = query("PRAGMA table_info(" + qi(t.name) + ")", null, src).rows;
+        if (target === t.name && t.sql) db.run(t.sql);
+        else {
+          renamed[t.name] = target;
+          const pk = info.filter(c => c[5]).sort((a, b) => a[5] - b[5]).map(c => qi(c[1]));
+          const defs = info.map(c => qi(c[1]) + (c[2] ? " " + c[2] : "") + (c[3] ? " NOT NULL" : "") + (c[4] !== null ? " DEFAULT " + c[4] : ""));
+          if (pk.length) defs.push("PRIMARY KEY (" + pk.join(", ") + ")");
+          db.run("CREATE TABLE " + qi(target) + " (" + defs.join(", ") + ")");
+        }
+        const cols = info.map(c => qi(c[1]));
+        const ins = db.prepare("INSERT INTO " + qi(target) + " (" + cols.join(", ") + ") VALUES (" + cols.map(() => "?").join(", ") + ")");
+        const sel = src.prepare("SELECT " + cols.join(", ") + " FROM " + qi(t.name));
+        try { while (sel.step()) { ins.run(sel.get()); rowsCopied++; } }
+        finally { sel.free(); ins.free(); }
+      }
+      if ($("#dbExtras").checked) {
+        const names = new Set(chosen.map(t => t.name));
+        const order = { index: 1, view: 2, trigger: 3 };
+        objs.filter(o => order[o.type] && o.sql).sort((a, b) => order[a.type] - order[b.type]).forEach(o => {
+          if (o.type !== "view" && (!names.has(o.tbl) || renamed[o.tbl])) { skipped++; return; }
+          if (taken.has(o.name.toLowerCase())) { skipped++; return; }
+          try { db.run(o.sql); taken.add(o.name.toLowerCase()); extras++; } catch (e) { skipped++; }
+        });
+      }
+      db.run("COMMIT");
+    } catch (e) {
+      try { db.run("ROLLBACK"); } catch (_) {}
+      src.close(); toast("Import failed: " + e.message); refreshSchema(true); return;
+    }
+    src.close();
+    const first = chosen[0];
+    B.table = renamed[first.name] || first.name; B.type = "table"; B.page = 0; B.sort = null; B.sel = null;
+    setDirty(true); refreshSchema(true); showTab("browse");
+    const ren = Object.keys(renamed).length;
+    toast("Imported " + chosen.length + " table" + (chosen.length === 1 ? "" : "s") + " (" + rowsCopied + " rows)" +
+      (extras ? ", " + extras + " other objects" : "") + (ren ? ", " + ren + " renamed" : "") + (skipped ? ", " + skipped + " skipped" : ""));
+  };
+  dlg.showModal();
+}
+
+/* ---------- CSV ---------- */
+async function importCsv(file, text) {
+  if (text === undefined) text = await file.text();
+  const firstLine = text.slice(0, text.search(/\r?\n|$/));
+  const delim = /\.(tsv|tab)$/i.test(file.name) || (firstLine.split("\t").length > firstLine.split(",").length) ? "\t"
+    : (firstLine.split(";").length > firstLine.split(",").length ? ";" : ",");
+  const rows = parseCsv(text, delim);
+  if (!rows.length) { toast("That file is empty"); return; }
+  $("#csvTitle").textContent = "Import " + file.name;
+  const dlg = $("#csvDlg");
+  $("#csvName").value = file.name.replace(/\.[^.]+$/, "").replace(/[^\w]+/g, "_") || "imported";
+  $("#csvInfo").textContent = rows.length + " lines, " + rows[0].length + " columns found (" + ({",": "comma", ";": "semicolon", "\t": "tab"})[delim] + " separated).";
+  dlg.returnValue = "cancel";
+  dlg.onclose = () => {
+    if (dlg.returnValue !== "ok") return;
+    const name = $("#csvName").value.trim();
+    const header = $("#csvHeader").checked;
+    const width = Math.max(...rows.map(r => r.length));
+    let names = header ? rows[0].slice() : [];
+    for (let i = 0; i < width; i++) if (!names[i] || !names[i].trim()) names[i] = "field" + (i + 1);
+    const seen = {}; names = names.map(n => { n = n.trim(); const k = n.toLowerCase(); seen[k] = (seen[k] || 0) + 1; return seen[k] > 1 ? n + "_" + seen[k] : n; });
+    const data = header ? rows.slice(1) : rows;
+    const types = names.map((_, ci) => {
+      let isInt = true, isNum = true, any = false;
+      for (const r of data) { const v = (r[ci] ?? "").trim(); if (v === "") continue; any = true;
+        if (!/^[-+]?\d+$/.test(v)) isInt = false; if (isNaN(Number(v))) { isNum = false; break; } }
+      return !any ? "TEXT" : isInt ? "INTEGER" : isNum ? "REAL" : "TEXT";
+    });
+    try {
+      db.run("BEGIN");
+      db.run("CREATE TABLE " + qi(name) + " (" + names.map((n, i) => qi(n) + " " + types[i]).join(", ") + ")");
+      const st = db.prepare("INSERT INTO " + qi(name) + " VALUES (" + names.map(() => "?").join(",") + ")");
+      for (const r of data) st.run(names.map((_, i) => { const v = r[i]; return v === undefined || v === "" ? null : v; }));
+      st.free(); db.run("COMMIT");
+      B.table = name; B.type = "table"; B.page = 0; B.sort = null;
+      setDirty(true); refreshSchema(true); showTab("browse");
+      toast("Imported " + data.length + " rows into " + name);
+    } catch (e) { try { db.run("ROLLBACK"); } catch (_) {} toast("Import failed: " + e.message); }
+  };
+  dlg.showModal();
+}
+
+/* ---------- Execute SQL ---------- */
+function runSql(text) {
+  if (!db) { toast("Open or create a database first"); return; }
+  if (!text.trim()) return;
+  storeEditor();
+  const t = curTab();
+  const t0 = performance.now();
+  const mutates = /\b(insert|update|delete|create|drop|alter|replace|vacuum|reindex)\b/i.test(text);
+  try {
+    const before = query("SELECT total_changes()").rows[0][0];
+    const results = db.exec(text);
+    const ms = (performance.now() - t0).toFixed(1);
+    const changed = query("SELECT total_changes()").rows[0][0] - before;
+    const last = results[results.length - 1];
+    if (mutates) { setDirty(true); refreshSchema(true); }
+    if (last) {
+      t.result = { cols: last.columns, rows: last.values };
+      t.msg = last.values.length + " row" + (last.values.length === 1 ? "" : "s") + " returned in " + ms + " ms" + (changed ? " · " + changed + " rows changed" : "");
+    } else {
+      t.result = null;
+      t.msg = "Ran successfully in " + ms + " ms · " + changed + " row" + (changed === 1 ? "" : "s") + " changed";
+    }
+    t.msgClass = "msg ok";
+  } catch (e) {
+    t.msg = "Error: " + e.message + (mutates ? "\nStatements before the error may already have run." : ""); t.msgClass = "msg err";
+    if (mutates) { setDirty(true); refreshSchema(true); }
+  }
+  renderSqlTab();
+}
+
+/* ---------- SQL editor tabs ---------- */
+function curTab() { return sqlTabs[activeSql]; }
+function makeTab(name, sql) {
+  if (!name) { const used = new Set(sqlTabs.map(t => t.name)); while (used.has("SQL " + nameSeq)) nameSeq++; name = "SQL " + nameSeq++; }
+  const t = { name, sql: sql || "", result: null, msg: "Results appear here.", msgClass: "msg" };
+  sqlTabs.push(t); return t;
+}
+function storeEditor() { const t = curTab(); if (t) t.sql = $("#sqlText").value; }
+function saveTabs() {
+  try { localStorage.setItem(SQLTABS_KEY, JSON.stringify({ tabs: sqlTabs.map(t => ({ name: t.name, sql: t.sql })), active: activeSql, nameSeq })); } catch (e) {}
+}
+function loadTabs() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SQLTABS_KEY) || "null");
+    if (d && Array.isArray(d.tabs) && d.tabs.length) {
+      d.tabs.forEach(t => makeTab(String(t.name || "SQL"), String(t.sql || "")));
+      nameSeq = d.nameSeq || sqlTabs.length + 1;
+      activeSql = Math.min(Math.max(0, d.active | 0), sqlTabs.length - 1);
+      return;
+    }
+  } catch (e) {}
+  makeTab(null, "-- Write SQL here. Ctrl + Enter runs it.\n-- Click + above to open another SQL tab.\nSELECT name, type FROM sqlite_master;");
+}
+function renderSqlTabs() {
+  $("#sqlTabs").innerHTML = sqlTabs.map((t, i) =>
+    '<div class="sqltab' + (i === activeSql ? " on" : "") + '" role="tab" tabindex="0" aria-selected="' + (i === activeSql) + '" data-i="' + i + '" title="' + esc(t.name) + ' (double-click to rename)">' +
+    "<span>" + esc(t.name) + '</span><button class="x" data-close="' + i + '" aria-label="Close ' + esc(t.name) + '" title="Close tab">×</button></div>'
+  ).join("") + '<button class="addtab" data-add="1" title="New SQL tab" aria-label="New SQL tab">+</button>';
+}
+function renderSqlTab() {
+  renderSqlTabs();
+  const t = curTab();
+  $("#sqlText").value = t.sql;
+  const m = $("#sqlMsg"); m.textContent = t.msg; m.className = t.msgClass;
+  if (t.result) renderGrid($("#sqlGrid"), t.result.cols, t.result.rows); else $("#sqlGrid").innerHTML = "";
+  $("#bSqlCsv").disabled = !t.result;
+}
+function switchSql(i) { if (i === activeSql) return; storeEditor(); activeSql = i; renderSqlTab(); saveTabs(); }
+function addSqlTab(name, sql) {
+  storeEditor(); makeTab(name, sql); activeSql = sqlTabs.length - 1;
+  renderSqlTab(); saveTabs(); showTab("sql"); $("#sqlText").focus();
+  const strip = $("#sqlTabs"); strip.scrollLeft = strip.scrollWidth;
+}
+function closeSqlTab(i) {
+  storeEditor();
+  const t = sqlTabs[i];
+  if (t.sql.trim() && !confirm("Close “" + t.name + "”? Its SQL is lost unless you clicked Save SQL first.")) return;
+  sqlTabs.splice(i, 1);
+  if (!sqlTabs.length) makeTab(null, "");
+  if (i < activeSql || activeSql >= sqlTabs.length) activeSql = Math.max(0, activeSql - 1);
+  renderSqlTab(); saveTabs();
+}
+function renameSqlTab(i) {
+  const n = prompt("Tab name", sqlTabs[i].name);
+  if (n === null || !n.trim()) return;
+  sqlTabs[i].name = n.trim().slice(0, 60); renderSqlTabs(); saveTabs();
+}
+const safeName = n => (n.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "query");
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.tab === name));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "p-" + name));
+}
+
+/* ---------- events ---------- */
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => showTab(t.dataset.tab));
+$("#bOpen").onclick = () => $("#fOpen").click();
+$("#fOpen").onchange = e => { const f = e.target.files[0]; if (f) openFile(f); e.target.value = ""; };
+$("#bNew").onclick = () => { if (!confirmDiscard()) return; const n = prompt("Name for the new database file", "new.sqlite"); if (n === null) return; setDb(new SQL.Database(), n.trim() || "new.sqlite"); setDirty(true); showTab("sql"); $("#sqlText").focus(); };
+$("#bSave").onclick = saveDb;
+$("#bSample").onclick = () => { if (!confirmDiscard()) return; setDb(sampleDb(), "sample.sqlite"); toast("Sample database loaded"); };
+$("#bImport").onclick = () => $("#fCsv").click();
+$("#fCsv").onchange = e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ""; };
+
+$("#schema").onclick = e => {
+  const b = e.target.closest("button[data-obj]"); if (!b) return;
+  if (b.dataset.type === "table" || b.dataset.type === "view") {
+    B.table = b.dataset.obj; B.type = b.dataset.type; B.page = 0; B.sort = null; B.sel = null;
+    $("#tblSel").value = B.table; loadBrowse(); showTab("browse");
+  } else {
+    showTab("structure");
+    const target = [...document.querySelectorAll("#structure .obj h4")].find(h => h.firstChild.textContent === b.dataset.obj);
+    if (target) target.scrollIntoView({ block: "start" });
+  }
+};
+$("#tblSel").onchange = e => { const o = e.target.selectedOptions[0]; B.table = o.value; B.type = o.dataset.type; B.page = 0; B.sort = null; B.sel = null; loadBrowse(); };
+let ft; $("#filter").oninput = e => { clearTimeout(ft); ft = setTimeout(() => { B.filter = e.target.value; B.page = 0; B.sel = null; loadBrowse(); }, 200); };
+$("#pgFirst").onclick = () => { B.page = 0; B.sel = null; loadBrowse(); };
+$("#pgPrev").onclick = () => { B.page--; B.sel = null; loadBrowse(); };
+$("#pgNext").onclick = () => { B.page++; B.sel = null; loadBrowse(); };
+$("#pgLast").onclick = () => { B.page = Math.ceil(B.total / B.size) - 1; B.sel = null; loadBrowse(); };
+
+$("#browseGrid").onclick = e => {
+  const th = e.target.closest("th[data-col]");
+  if (th) { const c = B.cols[+th.dataset.col]; if (B.sort === c) B.dir = B.dir === "ASC" ? "DESC" : "ASC"; else { B.sort = c; B.dir = "ASC"; } B.sel = null; B.page = 0; loadBrowse(); return; }
+  const tr = e.target.closest("tr[data-r]");
+  if (tr) { B.sel = +tr.dataset.r; document.querySelectorAll("#browseGrid tr.sel").forEach(r => r.classList.remove("sel")); tr.classList.add("sel"); updateButtons(); }
+};
+$("#browseGrid").ondblclick = e => {
+  const td = e.target.closest("td"); if (!td || td.classList.contains("rn")) return;
+  if (!B.editable) { toast("Views and tables without a rowid are read-only here"); return; }
+  const tr = td.parentElement; editCell(+tr.dataset.r, td.cellIndex - 1);
+};
+$("#bAddRow").onclick = () => {
+  try {
+    const info = query("PRAGMA table_info(" + qi(B.table) + ")").rows;
+    const req = info.filter(c => c[3] && c[4] === null && !c[5]).map(c => c[1]);
+    if (req.length) db.run("INSERT INTO " + qi(B.table) + " (" + req.map(qi).join(", ") + ") VALUES (" + req.map(() => "''").join(", ") + ")");
+    else db.run("INSERT INTO " + qi(B.table) + " DEFAULT VALUES");
+    setDirty(true); B.filter = ""; $("#filter").value = ""; B.sort = null;
+    B.page = Math.max(0, Math.ceil((B.total + 1) / B.size) - 1);
+    loadBrowse(); B.sel = B.rows.length - 1; loadBrowse(); refreshSchemaCounts(); toast("Row added. Double-click its cells to fill them in.");
+  } catch (e) { toast("Couldn’t add a row: " + e.message + ". Try an INSERT in Execute SQL."); }
+};
+$("#bDelRow").onclick = () => {
+  if (B.sel === null) return;
+  if (!confirm("Delete the selected row?")) return;
+  try { db.run("DELETE FROM " + qi(B.table) + " WHERE rowid = ?", [B.rids[B.sel]]); B.sel = null; setDirty(true); loadBrowse(); refreshSchemaCounts(); toast("Row deleted"); }
+  catch (e) { toast("Couldn’t delete: " + e.message); }
+};
+function refreshSchemaCounts() { const keep = B.table, sel = B.sel, page = B.page, sort = B.sort; refreshSchema(true); B.table = keep; B.sel = sel; B.page = page; B.sort = sort; loadBrowse(); }
+$("#bExportCsv").onclick = () => {
+  const t = qi(B.table); const cols = query("PRAGMA table_info(" + t + ")").rows.map(r => r[1]);
+  const w = whereClause(cols);
+  const r = query("SELECT * FROM " + t + w.sql + (B.sort ? " ORDER BY " + qi(B.sort) + " " + B.dir : ""), w.params);
+  download(toCsv(r.cols, r.rows), B.table + ".csv", "text/csv"); toast("Exported " + r.rows.length + " rows");
+};
+
+$("#bRun").onclick = () => runSql($("#sqlText").value);
+$("#bRunSel").onclick = () => { const ta = $("#sqlText"); const s = ta.value.slice(ta.selectionStart, ta.selectionEnd); runSql(s || ta.value); };
+$("#bSqlCsv").onclick = () => { const t = curTab(); if (t.result) { download(toCsv(t.result.cols, t.result.rows), safeName(t.name) + "-result.csv", "text/csv"); toast("Exported " + t.result.rows.length + " rows from " + t.name); } };
+$("#bSqlSave").onclick = () => {
+  storeEditor(); saveTabs(); const t = curTab();
+  const f = /\.sql$/i.test(t.name) ? safeName(t.name) : safeName(t.name) + ".sql";
+  download(t.sql, f, "application/sql"); toast("Saved " + f + " to your downloads");
+};
+$("#bSqlOpen").onclick = () => $("#fSql").click();
+$("#fSql").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; addSqlTab(f.name.replace(/\.sql$/i, ""), await f.text()); toast("Opened " + f.name + " in a new tab. Click Run all to run it."); };
+$("#sqlTabs").onclick = e => {
+  const x = e.target.closest("[data-close]"); if (x) { e.stopPropagation(); closeSqlTab(+x.dataset.close); return; }
+  if (e.target.closest("[data-add]")) { addSqlTab(); return; }
+  const tab = e.target.closest(".sqltab"); if (tab) switchSql(+tab.dataset.i);
+};
+$("#sqlTabs").ondblclick = e => { const tab = e.target.closest(".sqltab"); if (tab && !e.target.closest("[data-close]")) renameSqlTab(+tab.dataset.i); };
+$("#sqlTabs").onkeydown = e => { const tab = e.target.closest(".sqltab"); if (tab && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); switchSql(+tab.dataset.i); } };
+let sqlSaveT; $("#sqlText").oninput = () => { clearTimeout(sqlSaveT); sqlSaveT = setTimeout(() => { storeEditor(); saveTabs(); }, 400); };
+$("#sqlText").onkeydown = e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runSql(e.target.value); }
+  else if (e.altKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); addSqlTab(); }
+  else if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault(); const ta = e.target, s = ta.selectionStart;
+    ta.setRangeText("  ", s, ta.selectionEnd, "end");
+  }
+};
+
+let dragDepth = 0;
+addEventListener("dragenter", e => { if (e.dataTransfer.types.includes("Files")) { dragDepth++; $("#drop").classList.add("on"); } });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#drop").classList.remove("on"); } });
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("#drop").classList.remove("on"); const f = e.dataTransfer.files[0]; if (f && SQL) openFile(f); });
+addEventListener("beforeunload", e => { storeEditor(); saveTabs(); if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+/* ---------- start ---------- */
+loadTabs(); renderSqlTab();
+initSqlJs({ locateFile: f => "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/" + f })
+  .then(s => { SQL = s; $("#loading").remove(); loadBrowse(); })
+  .catch(e => { $("#loading").textContent = "Couldn’t load the SQLite engine: " + e.message + ". Check your internet connection and reload."; });
+})();
+</script>
+</body>
+</html>
